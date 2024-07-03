@@ -1,26 +1,30 @@
-﻿using System.Collections.Generic;
+﻿using Bookshelf.Server.DataObject;
 using Microsoft.EntityFrameworkCore;
+
 
 namespace Bookshelf.Server
 {
-
     public class BookshelfDBContext : DbContext
     {
-        public BookshelfDBContext(DbContextOptions<BookshelfDBContext> options) : base(options)
+        protected readonly IConfiguration Configuration;
+
+        public BookshelfDBContext(IConfiguration configuration)
         {
+            Configuration = configuration;
         }
 
-        public DbSet<YourEntity> YourEntities { get; set; }
+        protected override void OnConfiguring(DbContextOptionsBuilder options)
+        {
+            // connect to sqlite database
+            options.UseSqlite(Configuration.GetConnectionString("WebApiDatabase"));
+        }
 
-        // Define other DbSets for your entities
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<Book>()
+                .HasKey(b => b.NovelId);
+        }
+
+        public DbSet<Book> Books { get; set; }
     }
-
-    public class YourEntity
-    {
-        public int Id { get; set; }
-        public string Name { get; set; }
-
-        // Define other properties
-    }
-
 }

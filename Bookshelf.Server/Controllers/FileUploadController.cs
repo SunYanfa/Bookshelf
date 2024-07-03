@@ -7,6 +7,9 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using System.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace Bookshelf.Server.Controllers
 {
@@ -15,10 +18,12 @@ namespace Bookshelf.Server.Controllers
     public class FileUploadController : ControllerBase
     {
         private readonly ILogger<FileUploadController> _logger;
+        private readonly BookshelfDBContext _dbContext;
 
-        public FileUploadController(ILogger<FileUploadController> logger)
+        public FileUploadController(ILogger<FileUploadController> logger, BookshelfDBContext dbContext)
         {
             _logger = logger;
+            _dbContext = dbContext;
         }
 
         // POST: FileUpload
@@ -53,19 +58,39 @@ namespace Bookshelf.Server.Controllers
                 string jsonString = await System.IO.File.ReadAllTextAsync(filePath);
 
                 // 解析JSON文件并转换为实体对象
-                var books = JsonSerializer.Deserialize<List<BookReader>>(jsonString);
-
-                if (books != null)
+                try
                 {
-                    foreach (var book in books)
+                    var books = JsonSerializer.Deserialize<List<BookReader>>(jsonString);
+                    if (books != null)
                     {
-                        if (book.name != null && book.author != null)
+                        foreach (var book in books)
                         {
-                            await SearchBookInformation(book.name, book.author);
-                        }
+                            Thread.Sleep(1000);
+
+                            if (book.name != null && book.author != null)
+                            {
+                                var exist = await VerifyBookExists(book.name, book.author);
+                                if (!exist)
+                                {
+                                    Book? newBook = await SearchBookInformation(book.name, book.author);
+
+                                    if (newBook != null)
+                                    {
+                                        await AddBook(newBook);
+                                    }
+                               
+                                }
+                            
+                            }
                         
+                        }
                     }
+
+                }  catch (Exception ex)
+                {
+                    _logger.LogInformation($"File upload failed.{ex.Message}");
                 }
+
 
                 return Ok(new { filePath = filePath });
             }
@@ -76,7 +101,27 @@ namespace Bookshelf.Server.Controllers
             }
         }
 
-        private async Task SearchBookInformation(string novelName, string authorName)
+        private async Task<bool> VerifyBookExists(string novelName, string authorName)
+        {
+            var books = await _dbContext.Books
+                 .Where(b => b.NovelName.Contains(novelName))
+                 .Where(b => b.AuthorName.Contains(authorName))
+                 .ToListAsync();
+
+            if (books == null || books.Count == 0)
+            {
+                return false;
+            }
+            return true;
+        }
+        
+        private async Task AddBook(Book book)
+        {
+            _dbContext.Books.Add(book);
+            await _dbContext.SaveChangesAsync();
+        }
+
+        private async Task<Book?> SearchBookInformation(string novelName, string authorName)
         {
             using var client = new HttpClient();
             try
@@ -87,41 +132,38 @@ namespace Bookshelf.Server.Controllers
                 if (result == null || result.items.Count() == 0)
                 {
                     _logger.LogWarning($"No results found for {novelName}");
-                    return;
+                    return null;
                 }
-
                 var book = result.items[0];
                 if (book.authorname == authorName)
                 {
-                    var xml = new XElement("Book",
-                        new XElement("NovelName", book.novelname),
-                        new XElement("AuthorName", book.authorname),
-                        new XElement("NovelClass", book.novelClass),
-                        new XElement("NovelTags", book.tags),
-                        new XElement("NovelCover", book.cover),
-                        new XElement("NovelIntro", book.novelintro),
-                        new XElement("NovelIntroShort", book.novelintroshort),
-                        new XElement("Novelbefavoritedcount", string.Empty),
-                        new XElement("IsSaved", false),
-                        new XElement("NovelStep", book.novelstep),
-                        new XElement("NovelYear", DateTimeOffset.FromUnixTimeSeconds(book.novelborndate).DateTime)
-                    );
-
-                    var datosFolder = Path.Combine(Directory.GetCurrentDirectory(), "Datos");
-
-                    if (!Directory.Exists(datosFolder))
+                    var bookEntity = new Book
                     {
-                        Directory.CreateDirectory(datosFolder);
-                    }
+                        NovelIdJinJiang = book.novelid,
+                        NovelName = book.novelname,
+                        AuthorName = book.authorname,
+                        NovelClass = book.novelClass,
+                        NovelTags = book.tags,
+                        NovelCover = book.cover,
+                        NovelIntro = book.novelintro,
+                        NovelIntroShort = book.novelintroshort,
+                        NovelSize = book.novelsize,
+                        Novelbefavoritedcount = string.Empty,
+                        IsSaved = false,                       
+                        NovelStep = book.novelstep,
+                        NovelDate = DateTimeOffset.FromUnixTimeSeconds(book.novelborndate).DateTime
+                    };
 
-                    var xmlFilePath = Path.Combine(datosFolder, "book.xml");
-                    xml.Save(xmlFilePath);
-                    _logger.LogInformation($"Book information saved to {xmlFilePath}");
+                    _logger.LogInformation($"{book.novelname} genera");
+                    return bookEntity;
                 }
+
+                return null;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"An error occurred while searching book information for {novelName} by {authorName}");
+                return null;
             }
         }
     }
