@@ -23,8 +23,12 @@ namespace Bookshelf.Server
         {
             modelBuilder.Entity<Book>()
                 .HasKey(b => b.NovelId);
+            
+            modelBuilder.Entity<ErrorBook>()
+                .HasKey(b => b.IdErrorBook);
         }
 
         public DbSet<Book> Books { get; set; }
+        public DbSet<ErrorBook> ErrorBooks { get; set; }
     }
 }

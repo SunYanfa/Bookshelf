@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using System.Data;
 using Microsoft.EntityFrameworkCore;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Bookshelf.Server.Controllers
 {
@@ -78,7 +79,11 @@ namespace Bookshelf.Server.Controllers
                                     {
                                         await AddBook(newBook);
                                     }
-                               
+                                    else
+                                    {
+                                        await AddErrorBook(book.name, book.author, 0);
+                                    }
+
                                 }
                             
                             }
@@ -121,6 +126,28 @@ namespace Bookshelf.Server.Controllers
             await _dbContext.SaveChangesAsync();
         }
 
+        private async Task AddErrorBook (string novelName, string authorName, int errorType)
+        {
+            ErrorBook errorBook = new()
+            {
+                NovelName = novelName,
+                AuthorName = authorName,
+            };
+            if (errorType == 0)
+            {
+                errorBook.ErrorType = errorType;
+                errorBook.ErrorDescription = "Not found on this JJWXC";
+            } else
+            {
+                errorBook.ErrorType = errorType;
+                errorBook.ErrorDescription = "Other exception";
+            }
+            _dbContext.ErrorBooks.Add(errorBook);
+            await _dbContext.SaveChangesAsync();
+        }
+
+
+
         private async Task<Book?> SearchBookInformation(string novelName, string authorName)
         {
             using var client = new HttpClient();
@@ -158,10 +185,13 @@ namespace Bookshelf.Server.Controllers
                     return bookEntity;
                 }
 
+                await AddErrorBook(novelName, authorName, 0);
+
                 return null;
             }
             catch (Exception ex)
             {
+                await AddErrorBook(novelName, authorName, 0);
                 _logger.LogError(ex, $"An error occurred while searching book information for {novelName} by {authorName}");
                 return null;
             }
