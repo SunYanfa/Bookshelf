@@ -1,19 +1,12 @@
 ﻿using Bookshelf.Server.DataObject;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
-using System.Xml.Linq;
-using System.IO;
-using System.Net.Http;
-using System.Net.Http.Json;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using System.Data;
 using Microsoft.EntityFrameworkCore;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Bookshelf.Server.Controllers
 {
+
     [Route("[controller]")]
     [ApiController]
     public class FileUploadController : ControllerBase
@@ -79,19 +72,16 @@ namespace Bookshelf.Server.Controllers
                                     {
                                         await AddBook(newBook);
                                     }
-                                    else
-                                    {
-                                        await AddErrorBook(book.name, book.author, 0);
-                                    }
 
                                 }
-                            
+
                             }
-                        
+
                         }
                     }
 
-                }  catch (Exception ex)
+                }
+                catch (Exception ex)
                 {
                     _logger.LogInformation($"File upload failed.{ex.Message}");
                 }
@@ -119,14 +109,14 @@ namespace Bookshelf.Server.Controllers
             }
             return true;
         }
-        
+
         private async Task AddBook(Book book)
         {
             _dbContext.Books.Add(book);
             await _dbContext.SaveChangesAsync();
         }
 
-        private async Task AddErrorBook (string novelName, string authorName, int errorType)
+        private async Task AddErrorBook(string novelName, string authorName, int errorType, string? message)
         {
             ErrorBook errorBook = new()
             {
@@ -136,28 +126,28 @@ namespace Bookshelf.Server.Controllers
             if (errorType == 0)
             {
                 errorBook.ErrorType = errorType;
-                errorBook.ErrorDescription = "Not found on this JJWXC";
-            } else
+                errorBook.ErrorDescription = message ?? "Not found on this JJ";
+            }
+            else
             {
                 errorBook.ErrorType = errorType;
-                errorBook.ErrorDescription = "Other exception";
+                errorBook.ErrorDescription = message ?? "Other exception";
             }
             _dbContext.ErrorBooks.Add(errorBook);
             await _dbContext.SaveChangesAsync();
         }
 
 
-
         private async Task<Book?> SearchBookInformation(string novelName, string authorName)
         {
-            using var client = new HttpClient();
             try
             {
-                var url = $"https://android.jjwxc.net/androidapi/search?keyword={novelName}";
-                var result = await client.GetFromJsonAsync<SearchJinJiang>(url);
+                var result = GetSearchResultsAsync(novelName).Result;
 
                 if (result == null || result.items.Count() == 0)
                 {
+                    await AddErrorBook(novelName, authorName, 0, "SearchBookInformation result is null");
+
                     _logger.LogWarning($"No results found for {novelName}");
                     return null;
                 }
@@ -176,7 +166,7 @@ namespace Bookshelf.Server.Controllers
                         NovelIntroShort = book.novelintroshort,
                         NovelSize = book.novelsize,
                         Novelbefavoritedcount = string.Empty,
-                        IsSaved = false,                       
+                        IsSaved = false,
                         NovelStep = book.novelstep,
                         NovelDate = DateTimeOffset.FromUnixTimeSeconds(book.novelborndate).DateTime
                     };
@@ -184,17 +174,56 @@ namespace Bookshelf.Server.Controllers
                     _logger.LogInformation($"{book.novelname} genera");
                     return bookEntity;
                 }
-
-                await AddErrorBook(novelName, authorName, 0);
-
                 return null;
             }
             catch (Exception ex)
             {
-                await AddErrorBook(novelName, authorName, 0);
+                await AddErrorBook(novelName, authorName, 0, ex.Message);
                 _logger.LogError(ex, $"An error occurred while searching book information for {novelName} by {authorName}");
                 return null;
             }
         }
+
+        private static readonly HttpClient client = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(30) // 设置超时时间
+        };
+
+        public async Task<SearchJinJiang> GetSearchResultsAsync(string novelName)
+        {
+            try
+            {
+                var baseUrl = "https://android.jjwxc.net/androidapi/search";
+                var uriBuilder = new UriBuilder(baseUrl)
+                {
+                    Query = $"keyword={Uri.EscapeDataString(novelName)}"
+                };
+
+                HttpResponseMessage response = await client.GetAsync(uriBuilder.Uri).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode(); // 检查响应状态码
+
+                var result = await response.Content.ReadFromJsonAsync<SearchJinJiang>().ConfigureAwait(false);
+                return result;
+            }
+            catch (HttpRequestException httpRequestException)
+            {
+                // Handle HTTP request specific exceptions
+                Console.WriteLine($"Request error: {httpRequestException.Message}");
+                throw;
+            }
+            catch (TaskCanceledException taskCanceledException) when (taskCanceledException.CancellationToken == default)
+            {
+                // Handle request timeout
+                Console.WriteLine("Request timeout.");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Handle other types of exceptions
+                Console.WriteLine($"Unexpected error: {ex.Message}");
+                throw;
+            }
+        }
+
     }
 }

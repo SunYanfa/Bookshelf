@@ -68,16 +68,6 @@ function Bookshelf() {  // 修改组件名称拼写错误
                 </>
             ),
         },
-        //{
-        //    title: 'Novel Cover',
-        //    dataIndex: 'novelCover',
-        //    key: 'novelCover',
-        //},
-        //{
-        //    title: 'Novel Intro',
-        //    dataIndex: 'novelIntro',
-        //    key: 'novelIntro',
-        //},
         {
             title: 'Novel Intro Short',
             dataIndex: 'novelIntroShort',
@@ -126,7 +116,7 @@ function Bookshelf() {  // 修改组件名称拼写错误
     const props = {
         name: 'file',
         accept: 'application/json',
-        //action: '/fileUpload',
+        action: '/fileUpload',
         //headers: {
         //    authorization: 'authorization-text',
         //},

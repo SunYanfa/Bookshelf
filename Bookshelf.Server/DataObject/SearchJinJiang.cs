@@ -15,8 +15,8 @@
         public int novelstep { get; set; }
         public int type_id { get; set; }
         public int authorid { get; set; }
-        public int reviewrank { get; set; }
-        public int reviewnum { get; set; }
+        public double reviewrank { get; set; }
+        public double reviewnum { get; set; }
         public string tags { get; set; }
         public string novelname { get; set; }
         public string ebookurl { get; set; }
@@ -24,7 +24,7 @@
         public int novelid { get; set; }
         public int novelsize { get; set; }
         public string authorname { get; set; }
-        public int reviewscore { get; set; }
+        public double reviewscore { get; set; }
         public int age { get; set; }
         public string novelreviewexplain { get; set; }
         public string filmname { get; set; }
