@@ -9,11 +9,16 @@ import {
     SmileOutlined,
     SyncOutlined,
 } from '@ant-design/icons';
-import './App.css';
+import ModalBookshelf from './Component/ModalComponent';
+//import './App.css';
 
-function Bookshelf() {  // 修改组件名称拼写错误
+function Bookshelf() {  
     const [books, setBooks] = useState([]);  // 将初始状态设为空数组
+    const [modaldata, setmodaldata] = useState([]);
+
     const [loading, setLoading] = useState(false);
+    const [open, setOpen] = useState(false);
+
     const [tableParams, setTableParams] = useState({
         pagination: {
             current: 1,
@@ -27,90 +32,64 @@ function Bookshelf() {  // 修改组件名称拼写错误
         ...params,
     });
 
+    const showModal = (record) => {
+        setOpen(true);
+        setmodaldata(record);
+    };
 
     useEffect(() => {
         populateBookData();
     }, []);
 
     const columns = [
-        {
-            title: 'Novel Name',
-            dataIndex: 'novelName',
-            key: 'novelName',
-        },
-        {
-            title: 'Author Name',
-            dataIndex: 'authorName',
-            key: 'authorName',
-        },
-        {
-            title: 'Novel Class',
-            dataIndex: 'novelClass',
-            key: 'novelClass',
-        },
-        {
-            title: 'Novel Tags',
-            dataIndex: 'novelTags',
-            key: 'novelTags',
+        { title: 'Novel Name', dataIndex: 'novelName', key: 'novelName'},
+        { title: 'Author Name', dataIndex: 'authorName', key: 'authorName'},
+        { title: 'Novel Class', dataIndex: 'novelClass', key: 'novelClass'},
+        { title: 'Novel Tags', dataIndex: 'novelTags', key: 'novelTags',
             render: (_, { novelTags }) => (
                 <>
                     {novelTags.map((tag) => {
                         let color = tag.length > 5 ? 'geekblue' : 'green';
-                        if (tag === 'loser') {
-                            color = 'volcano';
-                        }
-                        return (
-                            <Tag color={color} key={tag}>
-                                {tag.toUpperCase()}
-                            </Tag>
-                        );
+                        return ( <Tag color={color} key={tag}> {tag.toUpperCase()} </Tag> );
                     })}
                 </>
             ),
         },
-        {
-            title: 'Novel Intro Short',
-            dataIndex: 'novelIntroShort',
-            key: 'novelIntroShort',
+        //{
+        //    title: 'Novel Intro Short',
+        //    dataIndex: 'novelIntroShort',
+        //    key: 'novelIntroShort',
+        //},
+        { title: 'Favorites Count', dataIndex: 'novelbefavoritedcount', key: 'novelbefavoritedcount' },
+        { title: 'Is Saved', dataIndex: 'isSaved', key: 'isSaved',
+            render: (isSaved) => ( isSaved ? <CheckOutlined /> : <CloseOutlined /> ),
         },
-        {
-            title: 'Favorites Count',
-            dataIndex: 'novelbefavoritedcount',
-            key: 'novelbefavoritedcount',
+        { title: 'Novel Step', dataIndex: 'novelStep', key: 'novelStep',
+            render: (novelStep) => ( (novelStep == 2) ? <CrownOutlined /> : <LineOutlined /> ),
         },
-        {
-            title: 'Is Saved',
-            dataIndex: 'isSaved',
-            key: 'isSaved',
-            render: (isSaved) => (
-                isSaved ? <CheckOutlined /> : <CloseOutlined />
+        { title: 'Novel Year', dataIndex: 'novelYear', key: 'novelYear' },
+        { title: 'Action', key: 'action', render: (_, record) => (
+                <Space size="middle">
+                    <a>Invite {record.name}</a>
+                    <Button onClick={() => showModal(record)}>Delete</Button>
+                </Space>
             ),
-        },
-        {
-            title: 'Novel Step',
-            dataIndex: 'novelStep',
-            key: 'novelStep',
-            render: (novelStep) => (
-                (novelStep == 2) ? <CrownOutlined /> : <LineOutlined />
-            ),
-        },
-        {
-            title: 'Novel Year',
-            dataIndex: 'novelYear',
-            key: 'novelYear',
-        },
+        }
     ];
 
     
-
-
-
     const contents = books.length === 0  // 检查 books 长度是否为 0
         ? <p><em>Loading... Please refresh once the ASP.NET backend has started. See <a href="https://aka.ms/jspsintegrationreact">https://aka.ms/jspsintegrationreact</a> for more details.</em></p>
-        : <Table
-            columns={columns}
-            dataSource={books}
-        />;
+        : <>
+            <Table
+                columns={columns}
+                dataSource={books} />
+            <ModalBookshelf
+                open={open}
+                setOpen={setOpen}
+                modaldata={modaldata}
+                setmodaldata={setmodaldata}/>
+        </>;
 
 
     const props = {
@@ -162,11 +141,10 @@ function Bookshelf() {  // 修改组件名称拼写错误
             // Assuming each book has 'novelTags' as a comma-separated string, split it into an array
             const booksWithDataTransformed = data.map(book => ({
                 ...book,
-                novelTags: book.novelTags.split(",").map(tag => tag.trim()),
+                novelTags: book.novelTags.split(/(?:,| )+/).map(tag => tag.trim()),
                 novelYear: new Date(book.novelDate).getFullYear().toString(),                
             }));
 
-            // Assuming setBooks is a state setter function (e.g., useState hook in React)
             setBooks(booksWithDataTransformed);
         } catch (error) {
             console.error('Failed to fetch books:', error);
