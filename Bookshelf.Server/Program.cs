@@ -1,4 +1,4 @@
-using Bookshelf.Server;
+using Bookshelf.Server.Helper;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);

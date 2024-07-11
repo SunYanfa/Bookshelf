@@ -3,6 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 using System.Data;
 using Microsoft.EntityFrameworkCore;
+using Bookshelf.Server.DataAccess;
+using System.Text;
+using Bookshelf.Server.Helper;
 
 namespace Bookshelf.Server.Controllers
 {
@@ -12,12 +15,14 @@ namespace Bookshelf.Server.Controllers
     public class FileUploadController : ControllerBase
     {
         private readonly ILogger<FileUploadController> _logger;
-        private readonly BookshelfDBContext _dbContext;
+        private readonly BookshelfHttpClient _bookshelfHttpClient;
+        private readonly BookRepository _bookRepository;
 
-        public FileUploadController(ILogger<FileUploadController> logger, BookshelfDBContext dbContext)
+        public FileUploadController(ILogger<FileUploadController> logger, BookshelfHttpClient bookshelfHttpClient, BookRepository bookRepository)
         {
             _logger = logger;
-            _dbContext = dbContext;
+            _bookshelfHttpClient = bookshelfHttpClient;
+            _bookRepository = bookRepository;
         }
 
         // POST: FileUpload
@@ -31,110 +36,63 @@ namespace Bookshelf.Server.Controllers
 
             _logger.LogInformation("File upload started.");
 
-            var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "Uploads");
-
-            if (!Directory.Exists(uploadsFolder))
-            {
-                Directory.CreateDirectory(uploadsFolder);
-            }
-
-            var filePath = Path.Combine(uploadsFolder, file.FileName);
-
+            List<Book> listBook = _bookRepository.GetAllBooks().ToList();
             try
             {
-                // Save the file to the server
-                using (var stream = new FileStream(filePath, FileMode.Create))
+                // Read the file content
+                string jsonString;
+                using (var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8))
                 {
-                    await file.CopyToAsync(stream);
+                    jsonString = await reader.ReadToEndAsync();
                 }
 
-                // Read the file and print its content to the console
-                string jsonString = await System.IO.File.ReadAllTextAsync(filePath);
-
-                // 解析JSON文件并转换为实体对象
-                try
+                // Deserialize JSON content
+                var books = JsonSerializer.Deserialize<List<BookReader>>(jsonString);
+                if (books != null)
                 {
-                    var books = JsonSerializer.Deserialize<List<BookReader>>(jsonString);
-                    if (books != null)
+                    foreach (var book in books)
                     {
-                        foreach (var book in books)
+                        // Use async/await for delay to avoid blocking threads
+                        await Task.Delay(1000);
+
+                        bool exists = listBook.Any(b => b.NovelName == book.name && b.AuthorName == book.author);
+                        if (!exists)
                         {
-                            Thread.Sleep(1000);
-
-                            if (book.name != null && book.author != null)
+                            try
                             {
-                                var exist = await VerifyBookExists(book.name, book.author);
-                                if (!exist)
+                                Book? newBook = await SearchBookInformation(book.name, book.author);
+                                if (newBook != null)
                                 {
-                                    Book? newBook = await SearchBookInformation(book.name, book.author);
-
-                                    if (newBook != null)
-                                    {
-                                        await AddBook(newBook);
-                                    }
-
+                                    newBook.NovelCover = await SaveImageFromUrlAsBase64Async(newBook.NovelCoverUrl);
+                                    await _bookRepository.AddBook(newBook);
                                 }
-
                             }
-
+                            catch (Exception ex)
+                            {
+                                _logger.LogError($"Error while processing book '{book.name}' by '{book.author}': {ex.Message}");
+                            }
                         }
                     }
-
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.LogInformation($"File upload failed.{ex.Message}");
+                    _logger.LogWarning("No books found in the uploaded file.");
+                    return BadRequest("Invalid file content.");
                 }
 
-
-                return Ok(new { filePath = filePath });
+                _logger.LogInformation("File upload completed successfully.");
+                return Ok();
+            }
+            catch (JsonException jsonEx)
+            {
+                _logger.LogError(jsonEx, "JSON parsing error occurred while processing the file.");
+                return BadRequest("Invalid JSON format.");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "An error occurred while processing the file.");
                 return StatusCode(500, "Internal server error");
             }
-        }
-
-        private async Task<bool> VerifyBookExists(string novelName, string authorName)
-        {
-            var books = await _dbContext.Books
-                 .Where(b => b.NovelName.Contains(novelName))
-                 .Where(b => b.AuthorName.Contains(authorName))
-                 .ToListAsync();
-
-            if (books == null || books.Count == 0)
-            {
-                return false;
-            }
-            return true;
-        }
-
-        private async Task AddBook(Book book)
-        {
-            _dbContext.Books.Add(book);
-            await _dbContext.SaveChangesAsync();
-        }
-
-        private async Task AddErrorBook(string novelName, string authorName, int errorType, string? message)
-        {
-            ErrorBook errorBook = new()
-            {
-                NovelName = novelName,
-                AuthorName = authorName,
-            };
-            if (errorType == 0)
-            {
-                errorBook.ErrorType = errorType;
-                errorBook.ErrorDescription = message ?? "Not found on this JJ";
-            }
-            else
-            {
-                errorBook.ErrorType = errorType;
-                errorBook.ErrorDescription = message ?? "Other exception";
-            }
-            _dbContext.ErrorBooks.Add(errorBook);
-            await _dbContext.SaveChangesAsync();
         }
 
 
@@ -146,7 +104,7 @@ namespace Bookshelf.Server.Controllers
 
                 if (result == null || result.items.Count() == 0)
                 {
-                    await AddErrorBook(novelName, authorName, 0, "SearchBookInformation result is null");
+                    await _bookRepository.AddErrorBook(novelName, authorName, 0, "SearchBookInformation result is null");
 
                     _logger.LogWarning($"No results found for {novelName}");
                     return null;
@@ -161,7 +119,7 @@ namespace Bookshelf.Server.Controllers
                         AuthorName = book.authorname,
                         NovelClass = book.novelClass,
                         NovelTags = book.tags,
-                        NovelCover = book.cover,
+                        NovelCoverUrl = book.cover,
                         NovelIntro = book.novelintro,
                         NovelIntroShort = book.novelintroshort,
                         NovelSize = book.novelsize,
@@ -178,16 +136,11 @@ namespace Bookshelf.Server.Controllers
             }
             catch (Exception ex)
             {
-                await AddErrorBook(novelName, authorName, 0, ex.Message);
+                await _bookRepository.AddErrorBook(novelName, authorName, 0, ex.Message);
                 _logger.LogError(ex, $"An error occurred while searching book information for {novelName} by {authorName}");
                 return null;
             }
         }
-
-        private static readonly HttpClient client = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(30) // 设置超时时间
-        };
 
         public async Task<SearchJinJiang> GetSearchResultsAsync(string novelName)
         {
@@ -199,7 +152,7 @@ namespace Bookshelf.Server.Controllers
                     Query = $"keyword={Uri.EscapeDataString(novelName)}"
                 };
 
-                HttpResponseMessage response = await client.GetAsync(uriBuilder.Uri).ConfigureAwait(false);
+                HttpResponseMessage response = await _bookshelfHttpClient.GetAsync(uriBuilder.Uri).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode(); // 检查响应状态码
 
                 var result = await response.Content.ReadFromJsonAsync<SearchJinJiang>().ConfigureAwait(false);
@@ -207,23 +160,30 @@ namespace Bookshelf.Server.Controllers
             }
             catch (HttpRequestException httpRequestException)
             {
-                // Handle HTTP request specific exceptions
                 Console.WriteLine($"Request error: {httpRequestException.Message}");
                 throw;
             }
             catch (TaskCanceledException taskCanceledException) when (taskCanceledException.CancellationToken == default)
             {
-                // Handle request timeout
                 Console.WriteLine("Request timeout.");
                 throw;
             }
             catch (Exception ex)
             {
-                // Handle other types of exceptions
                 Console.WriteLine($"Unexpected error: {ex.Message}");
                 throw;
             }
         }
-
+        
+        public async Task<string> SaveImageFromUrlAsBase64Async(string imageUrl)
+        {
+            if (string.IsNullOrEmpty(imageUrl))
+            {
+                throw new ArgumentException("Invalid image URL.");
+            }
+            byte[] imageBytes = await _bookshelfHttpClient.GetByteArrayAsync(imageUrl);
+            string base64String = Convert.ToBase64String(imageBytes);
+            return base64String;
+        }
     }
 }

@@ -2,7 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 
 
-namespace Bookshelf.Server
+namespace Bookshelf.Server.Helper
 {
     public class BookshelfDBContext : DbContext
     {
@@ -23,7 +23,7 @@ namespace Bookshelf.Server
         {
             modelBuilder.Entity<Book>()
                 .HasKey(b => b.NovelId);
-            
+
             modelBuilder.Entity<ErrorBook>()
                 .HasKey(b => b.IdErrorBook);
         }

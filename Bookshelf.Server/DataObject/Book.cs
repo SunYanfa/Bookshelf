@@ -13,6 +13,7 @@ namespace Bookshelf.Server.DataObject
         public string NovelTags { get; set; }
         public int NovelSize { get; set; } = 0;
         public string? NovelCover { get; set; }
+        public string? NovelCoverUrl { get; set; }
         public string? NovelIntro { get; set; }
         public string? NovelIntroShort { get; set; }
         public string? Novelbefavoritedcount { get; set; }
